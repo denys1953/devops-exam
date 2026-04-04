@@ -12,6 +12,7 @@
       - software-properties-common
       - conntrack
       - docker.io
+      - acl
     state: present
 
 - name: Add ubuntu user to docker group
