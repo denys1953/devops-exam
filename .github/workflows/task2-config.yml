@@ -1,0 +1,47 @@
+name: Task 2 - Configuration Management (Ansible)
+
+on:
+  push:
+    paths:
+      - 'task2/**' 
+  workflow_dispatch:
+
+jobs:
+  ansible:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+
+      - name: Setup SSH
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+
+      - name: Prepare Inventory from Template
+        run: |
+          sed "s/\${DROPLET_IP}/${{ secrets.VM_IP }}/g" task2/inventory.ini.tpl > task2/inventory.ini
+          
+      - name: Install Ansible
+        run: |
+          sudo apt update
+          sudo apt install -y ansible
+
+      - name: Ansible Lint (Syntax Check)
+        run: |
+          ansible-playbook task2/playbook.yml -i task2/inventory.ini --syntax-check
+
+      - name: Ansible Dry Run (Check Mode)
+        run: |
+          ansible-playbook task2/playbook.yml -i task2/inventory.ini --check
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"
+
+      - name: Ansible Apply (Real Deployment)
+        if: success()
+        run: |
+          ansible-playbook task2/playbook.yml -i task2/inventory.ini
+        env:
+          ANSIBLE_HOST_KEY_CHECKING: "False"

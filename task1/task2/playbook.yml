@@ -1,0 +1,8 @@
+---
+- name: Deploy K8s Environment
+  hosts: all
+  become: yes
+  roles:
+    - common
+    - minikube
+    - helm

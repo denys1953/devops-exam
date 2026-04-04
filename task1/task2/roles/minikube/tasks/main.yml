@@ -1,0 +1,26 @@
+---
+- name: Download Minikube
+  get_url:
+    url: https://storage.googleapis.com/minikube/releases/latest/minikube-linux-amd64
+    dest: /usr/local/bin/minikube
+    mode: '0755'
+
+- name: Download Kubectl
+  get_url:
+    url: "https://dl.k8s.io/release/v1.30.0/bin/linux/amd64/kubectl"
+    dest: /usr/local/bin/kubectl
+    mode: '0755'
+
+- name: Start Minikube with Docker driver
+  become: yes
+  become_user: ubuntu
+  shell: minikube start --driver=docker
+  args:
+    creates: /home/ubuntu/.minikube/machines/minikube/config.json
+
+- name: Setup Minikube Proxy
+  become: yes
+  become_user: ubuntu
+  shell: |
+    nohup kubectl proxy --address='0.0.0.0' --disable-filter=true > /dev/null 2>&1 &
+  tags: proxy
