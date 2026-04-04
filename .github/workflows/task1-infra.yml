@@ -1,0 +1,51 @@
+name: Task1 Infrastructure
+
+on:
+  workflow_dispatch:
+    inputs:
+      action:
+        description: "apply or destroy"
+        required: true
+        default: "apply"
+        type: choice
+        options:
+          - apply
+          - destroy
+
+jobs:
+  terraform:
+    runs-on: ubuntu-latest
+
+    env:
+      TF_VAR_do_token: ${{ secrets.DO_TOKEN }}
+      TF_VAR_ssh_key_fingerprint: ${{ secrets.SSH_FINGERPRINT }}
+      TF_VAR_last_name: dzhumalo
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init
+        run: |
+          terraform init \
+            -backend-config="access_key=${{ secrets.SPACES_ACCESS_KEY }}" \
+            -backend-config="secret_key=${{ secrets.SPACES_SECRET_KEY }}"
+        working-directory: task1
+
+      - name: Terraform Format Check
+        run: terraform fmt -check
+        working-directory: task1
+
+      - name: Terraform Validate
+        run: terraform validate
+        working-directory: task1
+
+      - name: Terraform Plan
+        run: terraform plan
+        working-directory: task1
+
+      - name: Terraform Apply/Destroy
+        if: success()
+        run: terraform ${{ inputs.action }} -auto-approve
+        working-directory: task1
