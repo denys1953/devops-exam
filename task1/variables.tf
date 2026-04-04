@@ -14,3 +14,6 @@ variable "last_name" {
   type        = string
   default     = "dzhumalo"
 }
+
+variable "spaces_access_id" {}
+variable "spaces_secret_key" {}
