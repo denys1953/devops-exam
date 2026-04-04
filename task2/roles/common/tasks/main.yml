@@ -3,20 +3,27 @@
   apt:
     update_cache: yes
 
-- name: Install base packages
+- name: Install ACL and dependencies
   apt:
-    name:
-      - curl
-      - apt-transport-https
-      - ca-certificates
-      - software-properties-common
-      - conntrack
-      - docker.io
-      - acl
+    name: [acl, curl, apt-transport-https, ca-certificates, software-properties-common, conntrack, docker.io]
     state: present
 
-- name: Add ubuntu user to docker group
+- name: Ensure group "docker" exists
+  group:
+    name: docker
+    state: present
+
+- name: Create ubuntu user (IMPORTANT)
   user:
     name: ubuntu
+    shell: /bin/bash
     groups: docker
     append: yes
+    create_home: yes
+
+- name: Fix permissions for ubuntu home
+  file:
+    path: /home/ubuntu
+    owner: ubuntu
+    group: ubuntu
+    mode: '0755'
