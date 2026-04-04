@@ -30,7 +30,7 @@ resource "digitalocean_droplet" "node" {
 
 # Firewall
 resource "digitalocean_firewall" "fw" {
-  name = "${var.last_name}-firewall"
+  name        = "${var.last_name}-firewall"
   droplet_ids = [digitalocean_droplet.node.id]
 
   inbound_rule {
