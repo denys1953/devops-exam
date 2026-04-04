@@ -65,6 +65,6 @@ resource "digitalocean_firewall" "fw" {
 
 # Spaces bucket
 resource "digitalocean_spaces_bucket" "bucket" {
-  name   = "${var.last_name}-bucket"
+  name   = "${var.last_name}-bucket-1"
   region = "fra1"
 }
