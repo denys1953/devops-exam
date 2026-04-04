@@ -27,3 +27,5 @@
     owner: ubuntu
     group: ubuntu
     mode: '0755'
+    state: directory
+  when: not ansible_check_mode

@@ -24,3 +24,4 @@
   shell: |
     nohup kubectl proxy --address='0.0.0.0' --disable-filter=true > /dev/null 2>&1 &
   tags: proxy
+  when: not ansible_check_mode
