@@ -1,0 +1,22 @@
+replicaCount: 2
+image:
+  # repository and tag will be injected via --set in GitHub Actions
+  pullPolicy: Always
+  pullSecret: regcred
+service:
+  type: NodePort
+  port: 8003
+  nodePort: 30003
+appConfig:
+  debug: "False"
+django:
+  debug: "False"
+  allowedHosts: "*"
+serviceAccount:
+  create: false
+autoscaling:
+  enabled: false
+ingress:
+  enabled: false
+httpRoute:
+  enabled: false

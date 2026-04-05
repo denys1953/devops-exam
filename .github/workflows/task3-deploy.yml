@@ -156,63 +156,10 @@ jobs:
           chmod 600 ~/.ssh/id_rsa
           ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
 
-      - name: Create Helm values for DEV on remote
-        if: inputs.environment == 'dev' || inputs.environment == 'both'
+      - name: Copy Helm values to VM
         run: |
-          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-dev.yaml << 'VALUESEOF'
-          replicaCount: 1
-          image:
-            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-            tag: \"${{ inputs.custom_tag_dev }}\"
-            pullPolicy: Always
-            pullSecret: regcred
-          service:
-            type: NodePort
-            port: ${{ env.DEV_PORT }}
-            nodePort: 30002
-          appConfig:
-            debug: \"True\"
-          django:
-            debug: \"True\"
-            allowedHosts: \"*\"
-          serviceAccount:
-            create: false
-          autoscaling:
-            enabled: false
-          ingress:
-            enabled: false
-          httpRoute:
-            enabled: false
-          VALUESEOF"
-
-      - name: Create Helm values for RELEASE on remote
-        if: inputs.environment == 'release' || inputs.environment == 'both'
-        run: |
-          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-release.yaml << 'VALUESEOF'
-          replicaCount: 2
-          image:
-            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-            tag: \"${{ inputs.custom_tag_release }}\"
-            pullPolicy: Always
-            pullSecret: regcred
-          service:
-            type: NodePort
-            port: ${{ env.RELEASE_PORT }}
-            nodePort: 30003
-          appConfig:
-            debug: \"False\"
-          django:
-            debug: \"False\"
-            allowedHosts: \"*\"
-          serviceAccount:
-            create: false
-          autoscaling:
-            enabled: false
-          ingress:
-            enabled: false
-          httpRoute:
-            enabled: false
-          VALUESEOF"
+          scp -r task3/values-dev.yaml root@${{ secrets.VM_IP }}:/tmp/values-dev.yaml
+          scp -r task3/values-release.yaml root@${{ secrets.VM_IP }}:/tmp/values-release.yaml
 
       - name: Copy Helm chart to VM
         run: |
@@ -225,6 +172,8 @@ jobs:
             su - ubuntu -c '
               helm upgrade --install django-dev /tmp/helm-chart \
                 -f /tmp/values-dev.yaml \
+                --set image.repository=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }} \
+                --set image.tag=\"${{ inputs.custom_tag_dev }}\" \
                 --namespace dev --create-namespace \
                 --dry-run --debug
             '
@@ -238,6 +187,8 @@ jobs:
             su - ubuntu -c '
               helm upgrade --install django-release /tmp/helm-chart \
                 -f /tmp/values-release.yaml \
+                --set image.repository=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }} \
+                --set image.tag=\"${{ inputs.custom_tag_release }}\" \
                 --namespace release --create-namespace \
                 --dry-run --debug
             '
@@ -293,63 +244,10 @@ jobs:
         run: |
           scp -r app-source/helm-charts-hello-world root@${{ secrets.VM_IP }}:/tmp/helm-chart
 
-      - name: Create Helm values for DEV on remote
-        if: inputs.environment == 'dev' || inputs.environment == 'both'
+      - name: Copy Helm values to VM
         run: |
-          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-dev.yaml << 'VALUESEOF'
-          replicaCount: 1
-          image:
-            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-            tag: \"${{ inputs.custom_tag_dev }}\"
-            pullPolicy: Always
-            pullSecret: regcred
-          service:
-            type: NodePort
-            port: ${{ env.DEV_PORT }}
-            nodePort: 30002
-          appConfig:
-            debug: \"True\"
-          django:
-            debug: \"True\"
-            allowedHosts: \"*\"
-          serviceAccount:
-            create: false
-          autoscaling:
-            enabled: false
-          ingress:
-            enabled: false
-          httpRoute:
-            enabled: false
-          VALUESEOF"
-
-      - name: Create Helm values for RELEASE on remote
-        if: inputs.environment == 'release' || inputs.environment == 'both'
-        run: |
-          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-release.yaml << 'VALUESEOF'
-          replicaCount: 2
-          image:
-            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
-            tag: \"${{ inputs.custom_tag_release }}\"
-            pullPolicy: Always
-            pullSecret: regcred
-          service:
-            type: NodePort
-            port: ${{ env.RELEASE_PORT }}
-            nodePort: 30003
-          appConfig:
-            debug: \"False\"
-          django:
-            debug: \"False\"
-            allowedHosts: \"*\"
-          serviceAccount:
-            create: false
-          autoscaling:
-            enabled: false
-          ingress:
-            enabled: false
-          httpRoute:
-            enabled: false
-          VALUESEOF"
+          scp -r task3/values-dev.yaml root@${{ secrets.VM_IP }}:/tmp/values-dev.yaml
+          scp -r task3/values-release.yaml root@${{ secrets.VM_IP }}:/tmp/values-release.yaml
 
       - name: Deploy DEV environment
         if: inputs.environment == 'dev' || inputs.environment == 'both'
@@ -358,6 +256,8 @@ jobs:
             su - ubuntu -c '
               helm upgrade --install django-dev /tmp/helm-chart \
                 -f /tmp/values-dev.yaml \
+                --set image.repository=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }} \
+                --set image.tag=\"${{ inputs.custom_tag_dev }}\" \
                 --namespace dev --create-namespace \
                 --wait --timeout 120s
             '
@@ -371,6 +271,8 @@ jobs:
             su - ubuntu -c '
               helm upgrade --install django-release /tmp/helm-chart \
                 -f /tmp/values-release.yaml \
+                --set image.repository=${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }} \
+                --set image.tag=\"${{ inputs.custom_tag_release }}\" \
                 --namespace release --create-namespace \
                 --wait --timeout 120s
             '
