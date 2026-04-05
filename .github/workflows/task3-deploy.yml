@@ -175,6 +175,12 @@ jobs:
           django:
             debug: \"True\"
             allowedHosts: \"*\"
+          serviceAccount:
+            create: false
+          autoscaling:
+            enabled: false
+          ingress:
+            enabled: false
           VALUESEOF"
 
       - name: Create Helm values for RELEASE on remote
@@ -196,6 +202,12 @@ jobs:
           django:
             debug: \"False\"
             allowedHosts: \"*\"
+          serviceAccount:
+            create: false
+          autoscaling:
+            enabled: false
+          ingress:
+            enabled: false
           VALUESEOF"
 
       - name: Copy Helm chart to VM
@@ -296,6 +308,12 @@ jobs:
           django:
             debug: \"True\"
             allowedHosts: \"*\"
+          serviceAccount:
+            create: false
+          autoscaling:
+            enabled: false
+          ingress:
+            enabled: false
           VALUESEOF"
 
       - name: Create Helm values for RELEASE on remote
@@ -317,6 +335,12 @@ jobs:
           django:
             debug: \"False\"
             allowedHosts: \"*\"
+          serviceAccount:
+            create: false
+          autoscaling:
+            enabled: false
+          ingress:
+            enabled: false
           VALUESEOF"
 
       - name: Deploy DEV environment
