@@ -1,0 +1,449 @@
+name: "Task 3 - CI/CD Deploy Application"
+
+on:
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: "Deployment environment"
+        required: true
+        type: choice
+        options:
+          - dev
+          - release
+          - both
+        default: "both"
+      action:
+        description: "Action to perform"
+        required: true
+        type: choice
+        options:
+          - deploy
+          - dry-run
+          - rollback
+          - build-only
+        default: "deploy"
+      rollback_revision:
+        description: "Helm revision to rollback to (only for rollback action)"
+        required: false
+        default: ""
+      docker_registry:
+        description: "Docker registry (e.g. docker.io/username)"
+        required: false
+        default: ""
+      custom_tag_dev:
+        description: "Custom image tag for dev (default: develop)"
+        required: false
+        default: "develop"
+      custom_tag_release:
+        description: "Custom image tag for release (default: 1.0.0)"
+        required: false
+        default: "1.0.0"
+
+env:
+  APP_REPO: "https://github.com/YulianSalo/devops-exam-pt2.git"
+  DOCKER_REGISTRY: ${{ inputs.docker_registry || secrets.DOCKER_REGISTRY }}
+  IMAGE_NAME: "devops-exam-app"
+  DEV_PORT: 8002
+  RELEASE_PORT: 8003
+
+jobs:
+
+  # ─────────────────────────────────────────────
+  # Job 1: Build & Push Docker image for DEV
+  # ─────────────────────────────────────────────
+  build-dev:
+    if: inputs.environment == 'dev' || inputs.environment == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CI/CD Repo
+        uses: actions/checkout@v4
+
+      - name: Clone Application Repo (develop branch)
+        run: |
+          git clone --branch develop ${{ env.APP_REPO }} app-source
+        
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push DEV image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app-source
+          file: ./app-source/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.custom_tag_dev }}
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:dev-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image exists
+        run: |
+          docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.custom_tag_dev }}
+          echo "✅ DEV image built and pushed successfully"
+
+  # ─────────────────────────────────────────────
+  # Job 2: Build & Push Docker image for RELEASE
+  # ─────────────────────────────────────────────
+  build-release:
+    if: inputs.environment == 'release' || inputs.environment == 'both'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CI/CD Repo
+        uses: actions/checkout@v4
+
+      - name: Clone Application Repo (tag 1.0.0)
+        run: |
+          git clone --branch ${{ inputs.custom_tag_release }} ${{ env.APP_REPO }} app-source
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Login to Docker Registry
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+      - name: Build & Push RELEASE image
+        uses: docker/build-push-action@v5
+        with:
+          context: ./app-source
+          file: ./app-source/Dockerfile
+          push: true
+          tags: |
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.custom_tag_release }}
+            ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:release-latest
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+      - name: Verify image exists
+        run: |
+          docker pull ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}:${{ inputs.custom_tag_release }}
+          echo "✅ RELEASE image built and pushed successfully"
+
+  # ─────────────────────────────────────────────
+  # Job 3: Validate Helm Charts (Dry-Run)
+  # ─────────────────────────────────────────────
+  validate:
+    needs: [build-dev, build-release]
+    # Allow job to run even if one build was skipped (when deploying single env)
+    if: |
+      always() &&
+      inputs.action != 'build-only' &&
+      inputs.action != 'rollback' &&
+      (needs.build-dev.result == 'success' || needs.build-dev.result == 'skipped') &&
+      (needs.build-release.result == 'success' || needs.build-release.result == 'skipped')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CI/CD Repo
+        uses: actions/checkout@v4
+
+      - name: Clone Application Repo (for Helm charts)
+        run: |
+          git clone ${{ env.APP_REPO }} app-source
+
+      - name: Setup SSH connection
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+
+      - name: Create Helm values for DEV on remote
+        if: inputs.environment == 'dev' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-dev.yaml << 'VALUESEOF'
+          replicaCount: 1
+          image:
+            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+            tag: \"${{ inputs.custom_tag_dev }}\"
+            pullPolicy: Always
+            pullSecret: regcred
+          service:
+            type: NodePort
+            port: ${{ env.DEV_PORT }}
+            nodePort: 30002
+          appConfig:
+            debug: \"True\"
+          django:
+            debug: \"True\"
+            allowedHosts: \"*\"
+          VALUESEOF"
+
+      - name: Create Helm values for RELEASE on remote
+        if: inputs.environment == 'release' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-release.yaml << 'VALUESEOF'
+          replicaCount: 2
+          image:
+            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+            tag: \"${{ inputs.custom_tag_release }}\"
+            pullPolicy: Always
+            pullSecret: regcred
+          service:
+            type: NodePort
+            port: ${{ env.RELEASE_PORT }}
+            nodePort: 30003
+          appConfig:
+            debug: \"False\"
+          django:
+            debug: \"False\"
+            allowedHosts: \"*\"
+          VALUESEOF"
+
+      - name: Copy Helm chart to VM
+        run: |
+          scp -r app-source/helm-charts-hello-world root@${{ secrets.VM_IP }}:/tmp/helm-chart
+
+      - name: Helm Dry-Run (DEV)
+        if: inputs.environment == 'dev' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              helm upgrade --install django-dev /tmp/helm-chart \
+                -f /tmp/values-dev.yaml \
+                --namespace dev --create-namespace \
+                --dry-run --debug
+            '
+          "
+          echo "✅ DEV Helm dry-run passed"
+
+      - name: Helm Dry-Run (RELEASE)
+        if: inputs.environment == 'release' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              helm upgrade --install django-release /tmp/helm-chart \
+                -f /tmp/values-release.yaml \
+                --namespace release --create-namespace \
+                --dry-run --debug
+            '
+          "
+          echo "✅ RELEASE Helm dry-run passed"
+
+  # ─────────────────────────────────────────────
+  # Job 4: Deploy to Kubernetes via Helm
+  # ─────────────────────────────────────────────
+  deploy:
+    if: |
+      always() &&
+      inputs.action == 'deploy' &&
+      (needs.validate.result == 'success')
+    needs: [validate]
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout CI/CD Repo
+        uses: actions/checkout@v4
+
+      - name: Clone Application Repo (for Helm charts)
+        run: |
+          git clone ${{ env.APP_REPO }} app-source
+
+      - name: Setup SSH connection
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+
+      - name: Ensure Docker registry secret exists in Minikube
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              # Create namespaces
+              kubectl create namespace dev --dry-run=client -o yaml | kubectl apply -f -
+              kubectl create namespace release --dry-run=client -o yaml | kubectl apply -f -
+
+              # Create or update registry credentials in both namespaces
+              for NS in dev release; do
+                kubectl create secret docker-registry regcred \
+                  --docker-server=https://index.docker.io/v1/ \
+                  --docker-username=${{ secrets.DOCKERHUB_USERNAME }} \
+                  --docker-password=${{ secrets.DOCKERHUB_TOKEN }} \
+                  --namespace=\$NS \
+                  --dry-run=client -o yaml | kubectl apply -f -
+              done
+            '
+          "
+
+      - name: Copy Helm chart to VM
+        run: |
+          scp -r app-source/helm-charts-hello-world root@${{ secrets.VM_IP }}:/tmp/helm-chart
+
+      - name: Create Helm values for DEV on remote
+        if: inputs.environment == 'dev' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-dev.yaml << 'VALUESEOF'
+          replicaCount: 1
+          image:
+            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+            tag: \"${{ inputs.custom_tag_dev }}\"
+            pullPolicy: Always
+            pullSecret: regcred
+          service:
+            type: NodePort
+            port: ${{ env.DEV_PORT }}
+            nodePort: 30002
+          appConfig:
+            debug: \"True\"
+          django:
+            debug: \"True\"
+            allowedHosts: \"*\"
+          VALUESEOF"
+
+      - name: Create Helm values for RELEASE on remote
+        if: inputs.environment == 'release' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "cat > /tmp/values-release.yaml << 'VALUESEOF'
+          replicaCount: 2
+          image:
+            repository: ${{ env.DOCKER_REGISTRY }}/${{ env.IMAGE_NAME }}
+            tag: \"${{ inputs.custom_tag_release }}\"
+            pullPolicy: Always
+            pullSecret: regcred
+          service:
+            type: NodePort
+            port: ${{ env.RELEASE_PORT }}
+            nodePort: 30003
+          appConfig:
+            debug: \"False\"
+          django:
+            debug: \"False\"
+            allowedHosts: \"*\"
+          VALUESEOF"
+
+      - name: Deploy DEV environment
+        if: inputs.environment == 'dev' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              helm upgrade --install django-dev /tmp/helm-chart \
+                -f /tmp/values-dev.yaml \
+                --namespace dev --create-namespace \
+                --wait --timeout 120s
+            '
+          "
+          echo "✅ DEV environment deployed on port ${{ env.DEV_PORT }}"
+
+      - name: Deploy RELEASE environment
+        if: inputs.environment == 'release' || inputs.environment == 'both'
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              helm upgrade --install django-release /tmp/helm-chart \
+                -f /tmp/values-release.yaml \
+                --namespace release --create-namespace \
+                --wait --timeout 120s
+            '
+          "
+          echo "✅ RELEASE environment deployed on port ${{ env.RELEASE_PORT }}"
+
+      - name: Setup port-forwarding for external access
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            # Kill existing port forwards
+            pkill -f 'kubectl port-forward.*8002' || true
+            pkill -f 'kubectl port-forward.*8003' || true
+            sleep 2
+
+            su - ubuntu -c '
+              if kubectl get svc django-hello-world-svc -n dev 2>/dev/null; then
+                nohup kubectl port-forward svc/django-hello-world-svc ${{ env.DEV_PORT }}:${{ env.DEV_PORT }} -n dev --address=0.0.0.0 > /dev/null 2>&1 &
+                echo \"✅ DEV port-forward active on :${{ env.DEV_PORT }}\"
+              fi
+
+              if kubectl get svc django-hello-world-svc -n release 2>/dev/null; then
+                nohup kubectl port-forward svc/django-hello-world-svc ${{ env.RELEASE_PORT }}:${{ env.RELEASE_PORT }} -n release --address=0.0.0.0 > /dev/null 2>&1 &
+                echo \"✅ RELEASE port-forward active on :${{ env.RELEASE_PORT }}\"
+              fi
+            '
+          "
+
+      - name: Verify deployment
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              echo \"=== DEV namespace ===\"
+              kubectl get pods,svc -n dev 2>/dev/null || echo \"DEV namespace not deployed\"
+              echo \"\"
+              echo \"=== RELEASE namespace ===\"
+              kubectl get pods,svc -n release 2>/dev/null || echo \"RELEASE namespace not deployed\"
+              echo \"\"
+              echo \"=== Helm releases ===\"
+              helm list -A
+            '
+          "
+
+  # ─────────────────────────────────────────────
+  # Job 5: Rollback
+  # ─────────────────────────────────────────────
+  rollback:
+    if: inputs.action == 'rollback'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Setup SSH connection
+        run: |
+          mkdir -p ~/.ssh
+          echo "${{ secrets.SSH_PRIVATE_KEY }}" > ~/.ssh/id_rsa
+          chmod 600 ~/.ssh/id_rsa
+          ssh-keyscan -H ${{ secrets.VM_IP }} >> ~/.ssh/known_hosts
+
+      - name: Show current Helm history
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              echo \"=== DEV history ===\"
+              helm history django-dev -n dev 2>/dev/null || echo \"No DEV release found\"
+              echo \"\"
+              echo \"=== RELEASE history ===\"
+              helm history django-release -n release 2>/dev/null || echo \"No RELEASE release found\"
+            '
+          "
+
+      - name: Rollback DEV environment
+        if: inputs.environment == 'dev' || inputs.environment == 'both'
+        run: |
+          REVISION="${{ inputs.rollback_revision }}"
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              if [ -n \"$REVISION\" ]; then
+                helm rollback django-dev $REVISION -n dev --wait
+              else
+                helm rollback django-dev -n dev --wait
+              fi
+            '
+          "
+          echo "✅ DEV rolled back"
+
+      - name: Rollback RELEASE environment
+        if: inputs.environment == 'release' || inputs.environment == 'both'
+        run: |
+          REVISION="${{ inputs.rollback_revision }}"
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              if [ -n \"$REVISION\" ]; then
+                helm rollback django-release $REVISION -n release --wait
+              else
+                helm rollback django-release -n release --wait
+              fi
+            '
+          "
+          echo "✅ RELEASE rolled back"
+
+      - name: Verify rollback
+        run: |
+          ssh root@${{ secrets.VM_IP }} "
+            su - ubuntu -c '
+              echo \"=== Current state after rollback ===\"
+              helm list -A
+              echo \"\"
+              kubectl get pods -A | grep django
+            '
+          "
