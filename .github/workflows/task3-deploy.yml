@@ -378,25 +378,38 @@ jobs:
           echo "✅ RELEASE environment deployed on port ${{ env.RELEASE_PORT }}"
 
       - name: Setup port-forwarding for external access
+        continue-on-error: true
         run: |
-          ssh root@${{ secrets.VM_IP }} "
+          ssh root@${{ secrets.VM_IP }} bash -c "'
             # Kill existing port forwards
-            pkill -f 'kubectl port-forward.*8002' || true
-            pkill -f 'kubectl port-forward.*8003' || true
+            pkill -f \"kubectl port-forward.*8002\" || true
+            pkill -f \"kubectl port-forward.*8003\" || true
             sleep 2
 
-            su - ubuntu -c '
-              if kubectl get svc django-hello-world-svc -n dev 2>/dev/null; then
-                nohup kubectl port-forward svc/django-hello-world-svc ${{ env.DEV_PORT }}:${{ env.DEV_PORT }} -n dev --address=0.0.0.0 > /dev/null 2>&1 &
-                echo \"✅ DEV port-forward active on :${{ env.DEV_PORT }}\"
-              fi
+            # Create port-forward script
+            cat > /home/ubuntu/start-port-forwards.sh << \"SCRIPT\"
+            #!/bin/bash
+            export KUBECONFIG=/home/ubuntu/.kube/config
+            export MINIKUBE_HOME=/home/ubuntu/.minikube
 
-              if kubectl get svc django-hello-world-svc -n release 2>/dev/null; then
-                nohup kubectl port-forward svc/django-hello-world-svc ${{ env.RELEASE_PORT }}:${{ env.RELEASE_PORT }} -n release --address=0.0.0.0 > /dev/null 2>&1 &
-                echo \"✅ RELEASE port-forward active on :${{ env.RELEASE_PORT }}\"
-              fi
-            '
-          "
+            # DEV port-forward
+            if kubectl get svc django-hello-world-svc -n dev 2>/dev/null; then
+              nohup kubectl port-forward svc/django-hello-world-svc ${{ env.DEV_PORT }}:${{ env.DEV_PORT }} -n dev --address=0.0.0.0 > /tmp/pf-dev.log 2>&1 &
+              echo \"DEV port-forward started on :${{ env.DEV_PORT }}\"
+            fi
+
+            # RELEASE port-forward
+            if kubectl get svc django-hello-world-svc -n release 2>/dev/null; then
+              nohup kubectl port-forward svc/django-hello-world-svc ${{ env.RELEASE_PORT }}:${{ env.RELEASE_PORT }} -n release --address=0.0.0.0 > /tmp/pf-release.log 2>&1 &
+              echo \"RELEASE port-forward started on :${{ env.RELEASE_PORT }}\"
+            fi
+            SCRIPT
+
+            chmod +x /home/ubuntu/start-port-forwards.sh
+            chown ubuntu:ubuntu /home/ubuntu/start-port-forwards.sh
+            su - ubuntu -c \"bash /home/ubuntu/start-port-forwards.sh\"
+          '"
+          echo "✅ Port-forwarding configured"
 
       - name: Verify deployment
         run: |
