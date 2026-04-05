@@ -379,57 +379,8 @@ jobs:
 
       - name: Setup port-forwarding for external access
         run: |
-          ssh root@${{ secrets.VM_IP }} << 'ENDSSH'
-          # Stop existing port-forward services
-          systemctl stop kube-pf-dev.service 2>/dev/null || true
-          systemctl stop kube-pf-release.service 2>/dev/null || true
-
-          # Create systemd service for DEV port-forward
-          cat > /etc/systemd/system/kube-pf-dev.service << EOF
-          [Unit]
-          Description=Kubectl Port-Forward DEV (8002)
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=ubuntu
-          ExecStart=/usr/local/bin/kubectl port-forward svc/django-hello-world-svc 8002:8002 -n dev --address=0.0.0.0
-          Restart=always
-          RestartSec=5
-          Environment=KUBECONFIG=/home/ubuntu/.kube/config
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-
-          # Create systemd service for RELEASE port-forward
-          cat > /etc/systemd/system/kube-pf-release.service << EOF
-          [Unit]
-          Description=Kubectl Port-Forward RELEASE (8003)
-          After=network.target
-
-          [Service]
-          Type=simple
-          User=ubuntu
-          ExecStart=/usr/local/bin/kubectl port-forward svc/django-hello-world-svc 8003:8003 -n release --address=0.0.0.0
-          Restart=always
-          RestartSec=5
-          Environment=KUBECONFIG=/home/ubuntu/.kube/config
-
-          [Install]
-          WantedBy=multi-user.target
-          EOF
-
-          systemctl daemon-reload
-          systemctl enable kube-pf-dev.service
-          systemctl enable kube-pf-release.service
-          systemctl start kube-pf-dev.service
-          systemctl start kube-pf-release.service
-          sleep 3
-          systemctl status kube-pf-dev.service --no-pager || true
-          systemctl status kube-pf-release.service --no-pager || true
-          echo "✅ Port-forwarding services started"
-          ENDSSH
+          scp task3/setup-port-forward.sh root@${{ secrets.VM_IP }}:/tmp/setup-port-forward.sh
+          ssh root@${{ secrets.VM_IP }} "chmod +x /tmp/setup-port-forward.sh && bash /tmp/setup-port-forward.sh"
 
       - name: Verify deployment
         run: |
