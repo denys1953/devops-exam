@@ -181,6 +181,8 @@ jobs:
             enabled: false
           ingress:
             enabled: false
+          httpRoute:
+            enabled: false
           VALUESEOF"
 
       - name: Create Helm values for RELEASE on remote
@@ -207,6 +209,8 @@ jobs:
           autoscaling:
             enabled: false
           ingress:
+            enabled: false
+          httpRoute:
             enabled: false
           VALUESEOF"
 
@@ -314,6 +318,8 @@ jobs:
             enabled: false
           ingress:
             enabled: false
+          httpRoute:
+            enabled: false
           VALUESEOF"
 
       - name: Create Helm values for RELEASE on remote
@@ -340,6 +346,8 @@ jobs:
           autoscaling:
             enabled: false
           ingress:
+            enabled: false
+          httpRoute:
             enabled: false
           VALUESEOF"
 
